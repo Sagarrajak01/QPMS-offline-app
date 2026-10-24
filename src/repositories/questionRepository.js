@@ -1,64 +1,35 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getDB } from '../db/database.js';
-
-export const createQuestion = async (qData) => {
-  const db = getDB();
-  const id = uuidv4();
-  const now = Date.now();
-  const optionsStr = qData.options ? JSON.stringify(qData.options) : null;
-  
-  await db.run(
-    `INSERT INTO questions (id, subject_id, unit, topic, type, difficulty, marks, text, options, correct_answer, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, qData.subject_id, qData.unit || '', qData.topic || '', qData.type, qData.difficulty, qData.marks, qData.text, optionsStr, qData.correct_answer || '', now, now]
-  );
-  return id;
-};
+import { v4 as uuidv4 } from 'uuid';
 
 export const getAllQuestions = async () => {
-  const db = getDB();
-  const res = await db.query('SELECT * FROM questions ORDER BY created_at DESC');
-  const questions = res.values || [];
-  return questions.map(q => ({
-    ...q,
-    options: q.options ? JSON.parse(q.options) : null
-  }));
+  const db = await getDB();
+  const res = await db.query('SELECT * FROM questions');
+  return (res.values || []).map(q => ({ ...q, options: JSON.parse(q.options || '[]') }));
 };
 
 export const getQuestionsBySubject = async (subjectId) => {
-  const db = getDB();
-  const res = await db.query('SELECT * FROM questions WHERE subject_id = ? ORDER BY created_at DESC', [subjectId]);
-  const questions = res.values || [];
-  return questions.map(q => ({
-    ...q,
-    options: q.options ? JSON.parse(q.options) : null
-  }));
+  const db = await getDB();
+  const res = await db.query('SELECT * FROM questions WHERE subject_id=?', [subjectId]);
+  return (res.values || []).map(q => ({ ...q, options: JSON.parse(q.options || '[]') }));
 };
 
-export const getQuestionById = async (id) => {
-  const db = getDB();
-  const res = await db.query('SELECT * FROM questions WHERE id = ?', [id]);
-  if (res.values && res.values.length > 0) {
-    const q = res.values[0];
-    return { ...q, options: q.options ? JSON.parse(q.options) : null };
-  }
-  return null;
+export const createQuestion = async (q) => {
+  const db = await getDB();
+  const id = uuidv4();
+  const query = `INSERT INTO questions (id, subject_id, type, difficulty, marks, text, options, correct_answer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+  await db.run(query, [id, q.subject_id, q.type, q.difficulty, q.marks, q.text, JSON.stringify(q.options || []), q.correct_answer]);
+  return { id };
 };
 
-export const updateQuestion = async (id, qData) => {
-  const db = getDB();
-  const now = Date.now();
-  const optionsStr = qData.options ? JSON.stringify(qData.options) : null;
-  
-  await db.run(
-    `UPDATE questions SET unit = ?, topic = ?, type = ?, difficulty = ?, marks = ?, text = ?, options = ?, correct_answer = ?, updated_at = ? WHERE id = ?`,
-    [qData.unit || '', qData.topic || '', qData.type, qData.difficulty, qData.marks, qData.text, optionsStr, qData.correct_answer || '', now, id]
-  );
-  return true;
+export const updateQuestion = async (id, q) => {
+  const db = await getDB();
+  const query = `UPDATE questions SET subject_id=?, type=?, difficulty=?, marks=?, text=?, options=?, correct_answer=? WHERE id=?`;
+  await db.run(query, [q.subject_id, q.type, q.difficulty, q.marks, q.text, JSON.stringify(q.options || []), q.correct_answer, id]);
+  return { id };
 };
 
 export const deleteQuestion = async (id) => {
-  const db = getDB();
-  await db.run('DELETE FROM questions WHERE id = ?', [id]);
-  return true;
+  const db = await getDB();
+  await db.run(`DELETE FROM questions WHERE id=?`, [id]);
+  return { id };
 };
