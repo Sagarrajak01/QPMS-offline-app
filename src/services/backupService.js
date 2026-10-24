@@ -43,16 +43,21 @@ export const exportDatabase = async () => {
 };
 
 export const importDatabase = async (jsonString) => {
+  let db = null;
+  let hasTransaction = false;
+
   try {
     const backup = JSON.parse(jsonString);
     if (!backup.data || !backup.data.subjects || !backup.data.questions) {
       throw new Error("Invalid backup file format.");
     }
 
-    const db = await getDB();
+    db = await getDB();
+    if (!db) throw new Error("Could not connect to database.");
     
     // Execute inside a transaction so if it fails, it rolls back without destroying current data
     await db.execute('BEGIN TRANSACTION;');
+    hasTransaction = true;
 
     // 1. Clear existing data
     await db.execute('DELETE FROM papers;');
@@ -67,7 +72,7 @@ export const importDatabase = async (jsonString) => {
       );
     }
 
-    // 3. Insert Questions (Stringify nested JSON)
+    // 3. Insert Questions
     for (const q of backup.data.questions) {
       await db.run(
         `INSERT INTO questions (id, subject_id, type, difficulty, marks, text, options, correct_answer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -75,7 +80,7 @@ export const importDatabase = async (jsonString) => {
       );
     }
 
-    // 4. Insert Papers (Stringify nested JSON)
+    // 4. Insert Papers (if any exist in the backup)
     if (backup.data.papers) {
       for (const p of backup.data.papers) {
         await db.run(
@@ -88,8 +93,14 @@ export const importDatabase = async (jsonString) => {
     await db.execute('COMMIT;');
     return { success: true, message: "Database restored successfully." };
   } catch (error) {
-    const db = await getDB();
-    await db.execute('ROLLBACK;');
+    // Only attempt rollback if the DB connection exists and a transaction was actively started
+    if (db && hasTransaction) {
+      try {
+        await db.execute('ROLLBACK;');
+      } catch (rollbackError) {
+        console.error("Rollback failed:", rollbackError);
+      }
+    }
     return { success: false, message: error.message };
   }
 };
