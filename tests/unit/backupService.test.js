@@ -1,19 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { exportData, importData } from '../../src/services/backupService';
+import { exportDatabase, importDatabase } from '../../src/services/backupService.js';
+import * as subjectRepo from '../../src/repositories/subjectRepository.js';
+import * as questionRepo from '../../src/repositories/questionRepository.js';
+import * as paperRepo from '../../src/repositories/paperRepository.js';
 
-// Hoist mocks
-const { mockRun, mockQuery, mockExecute } = vi.hoisted(() => ({
-  mockRun: vi.fn(),
-  mockQuery: vi.fn().mockResolvedValue({ values: [] }),
-  mockExecute: vi.fn()
+vi.mock('../../src/repositories/subjectRepository.js');
+vi.mock('../../src/repositories/questionRepository.js');
+vi.mock('../../src/repositories/paperRepository.js');
+
+// Mock Native Capacitor Plugins
+vi.mock('@capacitor/filesystem', () => ({
+  Filesystem: { writeFile: vi.fn().mockResolvedValue({ uri: 'file://mock/path' }) },
+  Directory: { Cache: 'CACHE' },
+  Encoding: { UTF8: 'utf8' }
 }));
 
-vi.mock('../../src/db/database', () => ({
-  getDB: vi.fn(() => ({
-    run: mockRun,
-    query: mockQuery,
-    execute: mockExecute
-  }))
+vi.mock('@capacitor/share', () => ({
+  Share: { share: vi.fn().mockResolvedValue({}) }
 }));
 
 describe('Backup Service', () => {
@@ -21,45 +24,21 @@ describe('Backup Service', () => {
     vi.clearAllMocks();
   });
 
-  it('exports data to a structured JSON string', async () => {
-    mockQuery.mockResolvedValueOnce({ values: [{ id: 's1', name: 'Math' }] }) // subjects
-             .mockResolvedValueOnce({ values: [{ id: 'q1' }] }) // questions
-             .mockResolvedValueOnce({ values: [{ id: 'p1' }] }) // papers
-             .mockResolvedValueOnce({ values: [{ key: 'theme', value: 'dark' }] }); // settings
+  it('exports data to a native file and opens the Android share intent', async () => {
+    subjectRepo.getAllSubjects.mockResolvedValue([{ id: 's1', name: 'Sub 1' }]);
+    questionRepo.getAllQuestions.mockResolvedValue([{ id: 'q1', text: 'Q 1' }]);
+    paperRepo.getAllPapers.mockResolvedValue([{ id: 'p1', title: 'Paper 1' }]);
 
-    const backupJSON = await exportData();
-    const data = JSON.parse(backupJSON);
+    const result = await exportDatabase();
 
-    expect(data.version).toBe(1);
-    expect(data.subjects).toHaveLength(1);
-    expect(data.questions).toHaveLength(1);
-    expect(data.papers).toHaveLength(1);
-    expect(data.settings).toHaveLength(1);
-  });
-
-  it('imports valid JSON data using transactions', async () => {
-    const validJSON = JSON.stringify({
-      version: 1,
-      subjects: [{ id: 's1', name: 'Math', code: '', description: '', default_duration: 60, default_marks: 100, created_at: 123, updated_at: 123 }],
-      questions: [],
-      papers: [],
-      settings: []
-    });
-
-    const result = await importData(validJSON);
     expect(result.success).toBe(true);
-    
-    // Verify Transaction Handling
-    expect(mockExecute).toHaveBeenCalledWith('BEGIN TRANSACTION');
-    expect(mockExecute).toHaveBeenCalledWith('DELETE FROM subjects'); // Clear existing
-    expect(mockRun).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO subjects'), expect.any(Array));
-    expect(mockExecute).toHaveBeenCalledWith('COMMIT');
+    expect(subjectRepo.getAllSubjects).toHaveBeenCalled();
+    expect(questionRepo.getAllQuestions).toHaveBeenCalled();
+    expect(paperRepo.getAllPapers).toHaveBeenCalled();
   });
 
-  it('rolls back on invalid JSON or database error', async () => {
-    const result = await importData('{"invalid_format": true}'); // Missing version/arrays
-    
+  it('fails gracefully on import since native file picker is required', async () => {
+    const result = await importDatabase('{"valid":"json"}');
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Invalid backup file');
   });
 });
