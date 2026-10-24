@@ -1,70 +1,47 @@
-import { CapacitorSQLite } from '@capacitor-community/sqlite';
-import { MIGRATIONS } from './schema';
+import { CapacitorSQLite, SQLiteConnection } from '@capacitor-community/sqlite';
+import { Capacitor } from '@capacitor/core';
 
-let dbConnection = null;
-const DB_NAME = 'qpms_db';
+const sqlite = new SQLiteConnection(CapacitorSQLite);
+let db = null;
 
 export const initDB = async () => {
-  try {
-    const isConn = await CapacitorSQLite.isConnection({ database: DB_NAME });
-    
-    if (isConn.result) {
-      dbConnection = await CapacitorSQLite.retrieveConnection({ database: DB_NAME });
-    } else {
-      dbConnection = await CapacitorSQLite.createConnection({
-        database: DB_NAME,
-        encrypted: false,
-        mode: 'no-encryption',
-        version: 1,
-        readonly: false
-      });
-    }
-
-    await dbConnection.open();
-    await runMigrations();
-    
-    return dbConnection;
-  } catch (error) {
-    console.error('Error initializing database', error);
-    throw error;
-  }
-};
-
-const runMigrations = async () => {
-  if (!dbConnection) throw new Error('Database connection not established');
+  if (Capacitor.getPlatform() === 'web') return true; 
   
-  // Create migrations table if not exists (fail-safe outside of normal migration flow)
-  await dbConnection.execute(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version INTEGER PRIMARY KEY,
-      executed_at INTEGER NOT NULL
-    );
-  `);
-
-  const res = await dbConnection.query('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1');
-  const currentVersion = res.values.length > 0 ? res.values[0].version : 0;
-
-  for (const migration of MIGRATIONS) {
-    if (migration.version > currentVersion) {
-      await dbConnection.execute(migration.statement);
-      await dbConnection.run(
-        'INSERT INTO schema_migrations (version, executed_at) VALUES (?, ?)',
-        [migration.version, Date.now()]
-      );
+  try {
+    const ret = await sqlite.checkConnectionsConsistency();
+    const isConn = (await sqlite.isConnection("qpms_db", false)).result;
+    
+    if (ret.result && isConn) {
+      db = await sqlite.retrieveConnection("qpms_db", false);
+    } else {
+      db = await sqlite.createConnection("qpms_db", false, "no-encryption", 1, false);
     }
+    
+    await db.open();
+    
+    // Enforce Foreign Keys & create schema
+    await db.execute('PRAGMA foreign_keys = ON;');
+    const schema = `
+      CREATE TABLE IF NOT EXISTS subjects (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT, default_duration INTEGER, default_marks INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS questions (
+        id TEXT PRIMARY KEY, subject_id TEXT NOT NULL, type TEXT, difficulty TEXT, marks INTEGER, text TEXT, options TEXT, correct_answer TEXT,
+        FOREIGN KEY(subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS papers (
+        id TEXT PRIMARY KEY, title TEXT, examination_name TEXT, duration INTEGER, max_marks INTEGER, instructions TEXT, subject_id TEXT, snapshot TEXT, created_at INTEGER, is_draft INTEGER
+      );
+    `;
+    await db.execute(schema);
+    return true;
+  } catch (err) {
+    console.error("Native DB Init Error:", err);
+    return false;
   }
 };
 
-export const getDB = () => {
-  if (!dbConnection) {
-    console.warn('Database accessed before initialization');
-  }
-  return dbConnection;
-};
-
-export const closeDB = async () => {
-  if (dbConnection) {
-    await dbConnection.close();
-    dbConnection = null;
-  }
+export const getDB = async () => {
+  if (!db) await initDB();
+  return db;
 };
