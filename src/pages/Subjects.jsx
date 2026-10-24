@@ -14,10 +14,8 @@ const Subjects = () => {
       const data = await getAllSubjects();
       setSubjects(data || []);
     } catch (error) {
-      setSubjects([
-        { id: '1', name: 'Operating Systems', code: 'CS301', default_duration: 180, default_marks: 100 },
-        { id: '2', name: 'Computer Networks', code: 'CS302', default_duration: 120, default_marks: 50 }
-      ]);
+      console.error("Error loading subjects:", error);
+      setSubjects([]); 
     }
   };
 
@@ -27,7 +25,9 @@ const Subjects = () => {
     try {
       if (editingSubject) await updateSubject(editingSubject.id, subjectData);
       else await createSubject(subjectData);
-    } catch (e) { } 
+    } catch (e) { 
+      console.error("Error saving subject:", e);
+    } 
     finally {
       setIsModalOpen(false);
       setEditingSubject(null);
@@ -37,7 +37,11 @@ const Subjects = () => {
 
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this subject?')) {
-      try { await deleteSubject(id); } catch (e) {}
+      try { 
+        await deleteSubject(id); 
+      } catch (e) {
+        console.error("Error deleting subject:", e);
+      }
       loadSubjects();
     }
   };
