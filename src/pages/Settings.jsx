@@ -1,29 +1,22 @@
 import React, { useRef, useState } from 'react';
 import { Download, Upload, AlertTriangle } from 'lucide-react';
-import { exportData, importData } from '../services/backupService.js';
+import { exportDatabase, importDatabase } from "../services/backupService.js";
 
 const Settings = () => {
   const fileInputRef = useRef(null);
   const [status, setStatus] = useState({ type: '', message: '' });
 
   const handleBackup = async () => {
+    setStatus({ type: 'info', message: 'Generating backup...' });
     try {
-      const jsonData = await exportData();
-      
-      // Create a blob and trigger browser download
-      const blob = new Blob([jsonData], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `QPMS_Backup_${new Date().toISOString().slice(0,10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setStatus({ type: 'success', message: 'Database backed up successfully.' });
+      const result = await exportDatabase();
+      if (result.success) {
+        setStatus({ type: 'success', message: result.message });
+      } else {
+        setStatus({ type: 'error', message: result.message });
+      }
     } catch (error) {
-      console.warn("Export failed in web preview", error);
-      setStatus({ type: 'error', message: 'Export is only fully supported in the native Android app.' });
+      setStatus({ type: 'error', message: 'Export failed: ' + error.message });
     }
   };
 
@@ -40,17 +33,17 @@ const Settings = () => {
     reader.onload = async (event) => {
       try {
         const jsonString = event.target.result;
-        const result = await importData(jsonString);
+        const result = await importDatabase(jsonString);
         
         if (result.success) {
-          setStatus({ type: 'success', message: 'Database restored successfully! Please refresh the app.' });
+          setStatus({ type: 'success', message: 'Database restored successfully! Please restart the app.' });
         } else {
-          setStatus({ type: 'error', message: `Restore failed: ${result.error}` });
+          setStatus({ type: 'error', message: `Restore failed: ${result.message}` });
         }
       } catch (err) {
-        console.warn("Import failed in web preview", err);
-        setStatus({ type: 'error', message: 'Import is only fully supported in the native Android app.' });
+        setStatus({ type: 'error', message: 'Import failed: ' + err.message });
       }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file);
   };
@@ -63,7 +56,9 @@ const Settings = () => {
         <div className={`p-4 mb-6 rounded-lg font-medium ${
           status.type === 'success' 
             ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30' 
-            : 'bg-red-50 dark:bg-red-500/10 text-red-800 dark:text-red-400 border border-red-200 dark:border-red-800/30'
+            : status.type === 'error'
+            ? 'bg-red-50 dark:bg-red-500/10 text-red-800 dark:text-red-400 border border-red-200 dark:border-red-800/30'
+            : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/30'
         }`}>
           {status.message}
         </div>
