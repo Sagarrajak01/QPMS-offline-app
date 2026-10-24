@@ -67,20 +67,20 @@ export const importDatabase = async (jsonString) => {
       );
     }
 
-    // 3. Insert Questions
+    // 3. Insert Questions (Stringify nested JSON)
     for (const q of backup.data.questions) {
       await db.run(
         `INSERT INTO questions (id, subject_id, type, difficulty, marks, text, options, correct_answer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [q.id, q.subject_id, q.type, q.difficulty, q.marks, q.text, q.options, q.correct_answer]
+        [q.id, q.subject_id, q.type, q.difficulty, q.marks, q.text, JSON.stringify(q.options || []), q.correct_answer]
       );
     }
 
-    // 4. Insert Papers (if any exist in the backup)
+    // 4. Insert Papers (Stringify nested JSON)
     if (backup.data.papers) {
       for (const p of backup.data.papers) {
         await db.run(
           `INSERT INTO papers (id, title, examination_name, duration, max_marks, instructions, subject_id, snapshot, created_at, is_draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [p.id, p.title, p.examination_name, p.duration, p.max_marks, p.instructions, p.subject_id, p.snapshot, p.created_at, p.is_draft]
+          [p.id, p.title, p.examination_name, p.duration, p.max_marks, p.instructions, p.subject_id, JSON.stringify(p.snapshot || {}), p.created_at, p.is_draft]
         );
       }
     }
