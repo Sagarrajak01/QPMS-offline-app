@@ -15,7 +15,6 @@ export const createQuestion = async (qData) => {
   return id;
 };
 
-// NEW FUNCTION ADDED
 export const getAllQuestions = async () => {
   const db = getDB();
   const res = await db.query('SELECT * FROM questions ORDER BY created_at DESC');
