@@ -143,6 +143,46 @@ export const exportDatabase = async () => {
   }
 };
 
+
+const runInTransaction = async (work, fallbackMessage) => {
+  let db = null;
+  let transactionStarted = false;
+
+  try {
+    db = await getDB();
+    await db.beginTransaction();
+    transactionStarted = true;
+
+    await work(db);
+
+    await db.commitTransaction();
+    transactionStarted = false;
+    return { success: true };
+  } catch (error) {
+    let message = error?.message || fallbackMessage;
+    if (!/[.!?]$/.test(message)) message += '.';
+
+    if (transactionStarted) {
+      try {
+        await db.rollbackTransaction();
+        message += ' Your existing data was not changed.';
+      } catch (rollbackError) {
+        console.error('Rollback failed:', rollbackError);
+        message += ' Rolling back also failed; restart the app and verify your data.';
+      }
+    }
+
+    return { success: false, message };
+  }
+};
+
+// Children first, so foreign keys are never violated while deleting.
+const deleteAllRows = async (db) => {
+  await db.execute('DELETE FROM papers;', false);
+  await db.execute('DELETE FROM questions;', false);
+  await db.execute('DELETE FROM subjects;', false);
+};
+
 export const importDatabase = async (jsonString) => {
   let data;
   try {
@@ -153,18 +193,9 @@ export const importDatabase = async (jsonString) => {
   }
 
   const now = Date.now();
-  let db = null;
-  let transactionStarted = false;
 
-  try {
-    db = await getDB();
-    await db.beginTransaction();
-    transactionStarted = true;
-
-    // Children first, so foreign keys are never violated while clearing.
-    await db.execute('DELETE FROM papers;', false);
-    await db.execute('DELETE FROM questions;', false);
-    await db.execute('DELETE FROM subjects;', false);
+  const result = await runInTransaction(async (db) => {
+    await deleteAllRows(db);
 
     for (const s of data.subjects) {
       await db.run(
@@ -200,28 +231,18 @@ export const importDatabase = async (jsonString) => {
         false
       );
     }
+  }, 'Restore failed.');
 
-    await db.commitTransaction();
-    transactionStarted = false;
+  if (!result.success) return result;
 
-    return {
-      success: true,
-      message: `Database restored successfully (${data.subjects.length} subjects, ${data.questions.length} questions, ${data.papers.length} papers).`
-    };
-  } catch (error) {
-    let message = error?.message || 'Restore failed.';
-    if (!/[.!?]$/.test(message)) message += '.';
+  return {
+    success: true,
+    message: `Database restored successfully (${data.subjects.length} subjects, ${data.questions.length} questions, ${data.papers.length} papers).`
+  };
+};
 
-    if (transactionStarted) {
-      try {
-        await db.rollbackTransaction();
-        message += ' Your existing data was not changed.';
-      } catch (rollbackError) {
-        console.error('Rollback failed:', rollbackError);
-        message += ' Rolling back also failed; restart the app and verify your data.';
-      }
-    }
+export const clearDatabase = async () => {
+  const result = await runInTransaction(deleteAllRows, 'Could not delete the data.');
 
-    return { success: false, message };
-  }
+  return result.success ? { success: true, message: 'All data has been deleted.' } : result;
 };
